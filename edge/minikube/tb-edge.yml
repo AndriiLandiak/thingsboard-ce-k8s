@@ -1,0 +1,113 @@
+#
+# Copyright © 2016-2020 The Thingsboard Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tb-edge
+  namespace: thingsboard
+spec:
+  serviceName: tb-edge
+  replicas: 1
+  podManagementPolicy: "Parallel"
+  selector:
+    matchLabels:
+      app: tb-edge
+  template:
+    metadata:
+      labels:
+        app: tb-edge
+    spec:
+      volumes:
+        - name: tb-edge-config
+          configMap:
+            name: tb-edge-config
+            items:
+            - key: conf
+              path:  tb-edge.conf
+            - key: logback
+              path:  logback.xml
+        - name: tb-edge-logs
+          emptyDir: {}
+      containers:
+      - name: server
+        imagePullPolicy: Never
+        image: thingsboard/tb-edge-node:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: TB_SERVICE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: TB_SERVICE_TYPE
+          value: "monolith"
+        - name: ZOOKEEPER_ENABLED
+          value: "true"
+        - name: ZOOKEEPER_URL
+          value: "zookeeper:2181"
+        - name: HTTP_LOG_CONTROLLER_ERROR_STACK_TRACE
+          value: "false"
+        envFrom:
+        - configMapRef:
+            name: tb-edge-db-config
+        - configMapRef:
+            name: tb-cache-config
+        - configMapRef:
+            name: tb-kafka-config
+        - configMapRef:
+            name: tb-edge-yml-config
+        volumeMounts:
+          - mountPath: /config
+            name: tb-edge-config
+          - mountPath: /var/log/tb-edge
+            name: tb-edge-logs
+        readinessProbe:
+          httpGet:
+            path: /login
+            port: http
+        livenessProbe:
+          httpGet:
+            path: /login
+            port: http
+          initialDelaySeconds: 360
+          timeoutSeconds: 10
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tb-edge
+  namespace: thingsboard
+spec:
+  type: ClusterIP
+  selector:
+    app: tb-edge
+  ports:
+  - port: 8080
+    name: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tb-edge-yml-config
+  labels:
+    name: tb-edge-yml-config
+data:
+  CLOUD_ROUTING_KEY: "dfab42b8-e026-d86f-c972-cd959786fa08"
+  CLOUD_ROUTING_SECRET: "pb199c7zhekntpn3q6hg"
+  CLOUD_RPC_HOST: "ce.tbqa.cloud"
